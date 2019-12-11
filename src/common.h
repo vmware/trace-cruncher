@@ -9,6 +9,7 @@
 
 #define TRACECRUNCHER_ERROR	tracecruncher_error
 #define KSHARK_ERROR		kshark_error
+#define FTRACE_ERROR		ftrace_error
 
 #define KS_INIT_ERROR \
 	PyErr_SetString(KSHARK_ERROR, "libshark failed to initialize");
