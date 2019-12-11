@@ -9,11 +9,21 @@ Copyright 2019 VMware Inc, Yordan Karadzhov (VMware) <y.karadz@gmail.com>
 from setuptools import setup, find_packages
 from distutils.core import Extension
 from Cython.Build import cythonize
+import numpy as np
 
 def main():
     kshark_path = '/usr/local/lib/kernelshark'
     traceevent_path = '/usr/local/lib/traceevent/'
     tracecmd_path = '/usr/local/lib/trace-cmd/'
+
+    cythonize('src/datawrapper.pyx')
+    module_data = Extension('tracecruncher.datawrapper',
+                            sources=['src/datawrapper.c'],
+                            include_dirs=[np.get_include()],
+                            library_dirs=[kshark_path, traceevent_path, tracecmd_path],
+                            runtime_library_dirs=[kshark_path, traceevent_path, tracecmd_path],
+                            libraries=['kshark', 'traceevent', 'tracecmd']
+                            )
 
     module_ks = Extension('tracecruncher.ksharkpy',
                           sources=['src/ksharkpy.c'],
@@ -41,7 +51,7 @@ def main():
           url='https://github.com/vmware/trace-cruncher',
           license='LGPL-2.1',
           packages=find_packages(),
-          ext_modules=[module_ks, module_ft],
+          ext_modules=[module_data, module_ks, module_ft],
           classifiers=[
               'Development Status :: 3 - Alpha',
               'Programming Language :: Python :: 3',
