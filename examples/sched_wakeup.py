@@ -15,18 +15,18 @@ import matplotlib.pyplot as plt
 import scipy.stats as st
 import numpy as np
 
-from ksharksetup import setup
-# Always call setup() before importing ksharkpy!!!
-setup()
+import tracecruncher.datawrapper as dw
+import tracecruncher.ksharkpy as ks
+import tracecruncher.ftracepy as ft
+import tracecruncher.utils as tc
 
-import ksharkpy as ks
 # Get the name of the user program.
 if len(sys.argv) >= 2:
     fname = str(sys.argv[1])
 else:
     fname = input('choose a trace file: ')
 
-status = ks.open_file(fname)
+status = ks.open(fname)
 if not status:
     print ("Failed to open file ", fname)
     sys.exit()
@@ -35,7 +35,7 @@ ks.register_plugin('reg_pid')
 
 # We do not need the Process Ids of the records.
 # Do not load the "pid" data.
-data = ks.load_data(pid_data=False)
+data = dw.load(pid_data=False)
 tasks = ks.get_tasks()
 
 # Get the name of the user program.
@@ -48,8 +48,8 @@ else:
 task_pid = tasks[prog_name][0]
 
 # Get the Event Ids of the sched_switch and sched_waking events.
-ss_eid = ks.event_id('sched', 'sched_switch')
-w_eid = ks.event_id('sched', 'sched_waking')
+ss_eid = ft.event_id('sched', 'sched_switch')
+w_eid = ft.event_id('sched', 'sched_waking')
 
 # Gey the size of the data.
 i = data['offset'].size
@@ -60,7 +60,7 @@ delta_max = i_ss_max = i_sw_max = 0
 while i > 0:
     i = i - 1
     if data['event'][i] == ss_eid:
-        next_pid = ks.read_event_field(offset=data['offset'][i],
+        next_pid = ft.read_event_field(offset=data['offset'][i],
                                        event_id=ss_eid,
                                        field='next_pid')
 
@@ -77,9 +77,9 @@ while i > 0:
                         break
 
                 if data['event'][i] == ss_eid:
-                    next_pid = ks.read_event_field(offset=data['offset'][i],
-                                       event_id=ss_eid,
-                                       field='next_pid')
+                    next_pid = ft.read_event_field(offset=data['offset'][i],
+                                                   event_id=ss_eid,
+                                                   field='next_pid')
                     if next_pid == task_pid:
                         # Second sched_switch for the same task. ?
                         time_ss = data['time'][i]
@@ -89,7 +89,7 @@ while i > 0:
                     continue
 
                 if (data['event'][i] == w_eid):
-                    waking_pid = ks.read_event_field(offset=data['offset'][i],
+                    waking_pid = ft.read_event_field(offset=data['offset'][i],
                                                      event_id=w_eid,
                                                      field='pid')
 
@@ -120,7 +120,7 @@ ax.hist(dt, bins=(100), histtype='step')
 plt.show()
 
 sname = 'sched.json'
-ks.new_session(fname, sname)
+tc.new_gui_session(fname, sname)
 
 with open(sname, 'r+') as s:
     session = json.load(s)
@@ -143,6 +143,6 @@ with open(sname, 'r+') as s:
 
     session['ViewTop'] = int(i_sw_max) - 5
 
-    ks.save_session(session, s)
+    tc.save_session(session, s)
 
 ks.close()
