@@ -16,11 +16,10 @@ import numpy as np
 from scipy.stats import genpareto as gpareto
 from scipy.optimize import curve_fit as cfit
 
-from ksharksetup import setup
-# Always call setup() before importing ksharkpy!!!
-setup()
-
-import ksharkpy as ks
+import tracecruncher.datawrapper as dw
+import tracecruncher.ksharkpy as ks
+import tracecruncher.ftracepy as ft
+import tracecruncher.utils as tc
 
 def chi2_test(hist, n_bins, c, loc, scale, norm):
     """ Simple Chi^2 test for the goodness of the fit.
@@ -92,7 +91,7 @@ def get_cpu_data(data, task_pid, start_id, stop_id, threshold):
         than the specified threshold.
     """
     # Get the size of the data.
-    size = ks.data_size(data)
+    size = tc.size(data)
     #print("data size:", size)
 
     time_start = -1
@@ -130,7 +129,7 @@ def make_ks_session(fname, data, start, stop):
         The sessions is zooming around the maximum observed latency.
     """
     sname = 'max_lat.json'
-    ks.new_session(fname, sname)
+    tc.new_gui_session(fname, sname)
     i_start = int(start)
     i_stop = int(stop)
 
@@ -145,28 +144,28 @@ def make_ks_session(fname, data, start, stop):
         session['Model']['range'] = [tmin, tmax]
 
         session['Markers']['markA']['isSet'] = True
-        session['Markers']['markA']['row'] = i_start)
+        session['Markers']['markA']['row'] = i_start
 
         session['Markers']['markB']['isSet'] = True
-        session['Markers']['markB']['row'] = i_stop)
+        session['Markers']['markB']['row'] = i_stop
 
-        session['ViewTop'] = i_start) - 5
+        session['ViewTop'] = i_start - 5
 
-        ks.save_session(session, s)
+        tc.save_session(session, s)
 
 
 fname = str(sys.argv[1])
-status = ks.open_file(fname)
+status = ks.open(fname)
 if not status:
     print ("Failed to open file ", fname)
     sys.exit()
 
 ks.register_plugin('reg_pid')
-data = ks.load_data()
+data = dw.load()
 
 # Get the Event Ids of the hrtimer_start and print events.
-start_id = ks.event_id('timer', 'hrtimer_start')
-stop_id = ks.event_id('ftrace', 'print')
+start_id = ft.event_id('timer', 'hrtimer_start')
+stop_id = ft.event_id('ftrace', 'print')
 print("start_id", start_id)
 print("stop_id", stop_id)
 
@@ -194,9 +193,6 @@ ks.close()
 dt_ot = np.array(data_ot)
 np.savetxt('peak_over_threshold_loaded.txt', dt_ot)
 
-make_ks_session(fname=fname, data=data, i_start=int(dt_ot[i_max_lat][1]),
-                                        i_stop=int(dt_ot[i_max_lat][2]))
-
 P = len(dt_ot) / tot
 err_P = error_P(n=len(dt_ot), N=tot)
 print('tot:', tot, ' P =', P)
@@ -207,6 +203,9 @@ i_max_lat = lat.argmax()
 print('imax:', i_max_lat, int(dt_ot[i_max_lat][1]))
 
 print('max', np.amax(dt_ot))
+
+make_ks_session(fname=fname, data=data, start=dt_ot[i_max_lat][1],
+                                        stop=dt_ot[i_max_lat][2])
 
 start = threshold
 stop = 31
