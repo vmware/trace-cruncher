@@ -5,10 +5,12 @@
 #
 
 all:
+	./install_third_party.sh
 	python3 setup.py build
 
 clean:
-	rm -rf build src/datawrapper.c
+	rm -rf third_party build tracecruncher/lib
+	rm -f src/datawrapper.c
 
 install:
 	python3 setup.py install --record install_manifest.txt

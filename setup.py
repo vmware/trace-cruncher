@@ -12,34 +12,37 @@ from Cython.Build import cythonize
 import numpy as np
 
 def main():
-    kshark_path = '/usr/local/lib/kernelshark'
-    traceevent_path = '/usr/local/lib/traceevent/'
-    tracecmd_path = '/usr/local/lib/trace-cmd/'
+    third_party = './third_party'
 
     cythonize('src/datawrapper.pyx')
+
+    third_party_libdirs = [third_party+'/lib/kernelshark',
+                           third_party+'/lib/traceevent',
+                           third_party+'/lib/trace-cmd']
+
+    runtime_library_dirs=['$ORIGIN/lib']
+
     module_data = Extension('tracecruncher.datawrapper',
                             sources=['src/datawrapper.c'],
-                            include_dirs=[np.get_include()],
-                            library_dirs=[kshark_path, traceevent_path, tracecmd_path],
-                            runtime_library_dirs=[kshark_path, traceevent_path, tracecmd_path],
+                            include_dirs=[np.get_include(), third_party+'/include'],
+                            library_dirs=third_party_libdirs,
+                            runtime_library_dirs=runtime_library_dirs,
                             libraries=['kshark', 'traceevent', 'tracecmd']
                             )
 
     module_ks = Extension('tracecruncher.ksharkpy',
                           sources=['src/ksharkpy.c'],
-                          library_dirs=[kshark_path],
-                          runtime_library_dirs=[kshark_path],
+                          include_dirs=[third_party+'/include'],
+                          library_dirs=third_party_libdirs,
+                          runtime_library_dirs=runtime_library_dirs,
                           libraries=['kshark'],
-                          define_macros=[
-                              ('LIB_KSHARK_PATH', '\"' + kshark_path + '/libkshark.so\"'),
-                              ('KS_PLUGIN_DIR',   '\"' + kshark_path + '/plugins\"')
-                              ],
                           )
 
     module_ft = Extension('tracecruncher.ftracepy',
                           sources=['src/ftracepy.c'],
-                          library_dirs=[kshark_path, traceevent_path, tracecmd_path],
-                          runtime_library_dirs=[kshark_path, traceevent_path, tracecmd_path],
+                          include_dirs=[third_party+'/include'],
+                          library_dirs=third_party_libdirs,
+                          runtime_library_dirs=runtime_library_dirs,
                           libraries=['kshark', 'traceevent', 'tracecmd'],
                           )
 
@@ -52,6 +55,7 @@ def main():
           license='LGPL-2.1',
           packages=find_packages(),
           ext_modules=[module_data, module_ks, module_ft],
+          package_data={'tracecruncher': ['lib/*.so*']},
           classifiers=[
               'Development Status :: 3 - Alpha',
               'Programming Language :: Python :: 3',
