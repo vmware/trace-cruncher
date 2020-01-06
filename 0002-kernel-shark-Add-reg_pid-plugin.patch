@@ -1,4 +1,4 @@
-From b3efcb6368bc7f70a23e156dce6c58d09953889a Mon Sep 17 00:00:00 2001
+From dbfb97e61e9907df195970cf378740a1ee927de9 Mon Sep 17 00:00:00 2001
 From: "Yordan Karadzhov (VMware)" <y.karadz@gmail.com>
 Date: Wed, 9 Oct 2019 16:57:27 +0300
 Subject: [PATCH 2/2] kernel-shark: Add "reg_pid" plugin
@@ -33,7 +33,7 @@ index 6c77179..bf69945 100644
  set(PLUGINS ${PLUGIN_LIST} PARENT_SCOPE)
 diff --git a/kernel-shark/src/plugins/reg_pid.c b/kernel-shark/src/plugins/reg_pid.c
 new file mode 100644
-index 0000000..4116dd8
+index 0000000..df2e406
 --- /dev/null
 +++ b/kernel-shark/src/plugins/reg_pid.c
 @@ -0,0 +1,189 @@
@@ -216,14 +216,14 @@ index 0000000..4116dd8
 +/** Load this plugin. */
 +int KSHARK_PLUGIN_INITIALIZER(struct kshark_context *kshark_ctx)
 +{
-+// 	printf("--> pid_reg init\n");
++	printf("--> pid_reg init\n");
 +	return plugin_pid_reg_init(kshark_ctx);
 +}
 +
 +/** Unload this plugin. */
 +int KSHARK_PLUGIN_DEINITIALIZER(struct kshark_context *kshark_ctx)
 +{
-+// 	printf("<-- pid reg close\n");
++	printf("<-- pid reg close\n");
 +	return plugin_pid_reg_close(kshark_ctx);
 +}
 -- 

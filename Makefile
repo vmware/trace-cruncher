@@ -4,15 +4,13 @@
 # Copyright 2019 VMware Inc, Yordan Karadzhov (VMware) <y.karadz@gmail.com>
 #
 
-kshark_path ?= /usr/local/lib/kernelshark
-traceevent_path ?= /usr/local/lib/traceevent/
-tracecmd_path ?= /usr/local/lib/trace-cmd/
-
 all:
+	./install_third_party.sh
 	python3 setup.py build
 
 clean:
-	rm -rf build src/datawrapper.c
+	rm -rf third_party build tracecruncher/lib
+	rm -f src/datawrapper.c
 
 install:
 	python3 setup.py install --record install_manifest.txt

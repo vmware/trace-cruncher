@@ -137,7 +137,9 @@ static PyObject *method_register_plugin(PyObject *self, PyObject *args,
 		return NULL;
 	}
 
-	if (asprintf(&lib_file, "%s/plugin-%s.so", KS_PLUGIN_DIR, plugin) < 0) {
+	if (asprintf(&lib_file, "%s/lib/plugin-%s.so",
+			        getenv("TRACE_CRUNCHER_PATH"),
+				plugin) < 0) {
 		KS_MEM_ERROR
 		return NULL;
 	}
