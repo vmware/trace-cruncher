@@ -15,8 +15,6 @@ import matplotlib.pyplot as plt
 import scipy.stats as st
 import numpy as np
 
-import tracecruncher.datawrapper as dw
-import tracecruncher.ksharkpy as ks
 import tracecruncher.ftracepy as ft
 import tracecruncher.utils as tc
 
@@ -26,17 +24,12 @@ if len(sys.argv) >= 2:
 else:
     fname = input('choose a trace file: ')
 
-status = ks.open(fname)
-if not status:
-    print ("Failed to open file ", fname)
-    sys.exit()
-
-ks.register_plugin('reg_pid')
+f = tc.open_file(file_name=fname)
 
 # We do not need the Process Ids of the records.
 # Do not load the "pid" data.
-data = dw.load(pid_data=False)
-tasks = ks.get_tasks()
+data = f.load(pid_data=False)
+tasks = f.get_tasks()
 
 # Get the name of the user program.
 if len(sys.argv) >= 3:
@@ -48,11 +41,11 @@ else:
 task_pid = tasks[prog_name][0]
 
 # Get the Event Ids of the sched_switch and sched_waking events.
-ss_eid = ft.event_id('sched', 'sched_switch')
-w_eid = ft.event_id('sched', 'sched_waking')
+ss_eid = f.event_id(name='sched/sched_switch')
+w_eid = f.event_id(name='sched/sched_waking')
 
 # Gey the size of the data.
-i = data['offset'].size
+i = tc.size(data)
 
 dt = []
 delta_max = i_ss_max = i_sw_max = 0
@@ -60,7 +53,7 @@ delta_max = i_ss_max = i_sw_max = 0
 while i > 0:
     i = i - 1
     if data['event'][i] == ss_eid:
-        next_pid = ft.read_event_field(offset=data['offset'][i],
+        next_pid = f.read_event_field(offset=data['offset'][i],
                                        event_id=ss_eid,
                                        field='next_pid')
 
@@ -73,13 +66,13 @@ while i > 0:
                 i = i - 1
 
                 if data['event'][i] < 0 and cpu_ss == data['cpu'][i]:
-			# Ring buffer overflow. Ignore this case and continue.
+                        # Ring buffer overflow. Ignore this case and continue.
                         break
 
                 if data['event'][i] == ss_eid:
-                    next_pid = ft.read_event_field(offset=data['offset'][i],
-                                                   event_id=ss_eid,
-                                                   field='next_pid')
+                    next_pid = f.read_event_field(offset=data['offset'][i],
+                                                  event_id=ss_eid,
+                                                  field='next_pid')
                     if next_pid == task_pid:
                         # Second sched_switch for the same task. ?
                         time_ss = data['time'][i]
@@ -89,7 +82,7 @@ while i > 0:
                     continue
 
                 if (data['event'][i] == w_eid):
-                    waking_pid = ft.read_event_field(offset=data['offset'][i],
+                    waking_pid = f.read_event_field(offset=data['offset'][i],
                                                      event_id=w_eid,
                                                      field='pid')
 
@@ -107,6 +100,7 @@ while i > 0:
 desc = st.describe(np.array(dt))
 print(desc)
 
+# Plot the latency distribution.
 fig, ax = plt.subplots(nrows=1, ncols=1)
 fig.set_figheight(6)
 fig.set_figwidth(7)
@@ -119,30 +113,27 @@ ax.set_xlabel('latency [$\mu$s]')
 ax.hist(dt, bins=(100), histtype='step')
 plt.show()
 
-sname = 'sched.json'
-tc.new_gui_session(fname, sname)
+# Prepare a session description for KernelShark.
+s = tc.ks_session('sched')
 
-with open(sname, 'r+') as s:
-    session = json.load(s)
-    session['TaskPlots'] = [task_pid]
-    session['CPUPlots'] = [int(data['cpu'][i_sw_max])]
+delta = data['time'][i_ss_max] - data['time'][i_sw_max]
+tmin = data['time'][i_sw_max] - delta
+tmax = data['time'][i_ss_max] + delta
 
-    if data['cpu'][i_ss_max] != data['cpu'][i_sw_max]:
-        session['CPUPlots'].append(int(data['cpu'][i_ss_max]))
+s.set_time_range(tmin=tmin, tmax=tmax)
 
-    delta = data['time'][i_ss_max] - data['time'][i_sw_max]
-    tmin = int(data['time'][i_sw_max] - delta)
-    tmax = int(data['time'][i_ss_max] + delta)
-    session['Model']['range'] = [tmin, tmax]
+cpu_plots = [data['cpu'][i_sw_max]]
+if data['cpu'][i_ss_max] != data['cpu'][i_sw_max]:
+    cpu_plots.append(data['cpu'][i_ss_max])
 
-    session['Markers']['markA']['isSet'] = True
-    session['Markers']['markA']['row'] = int(i_sw_max)
+s.set_cpu_plots(f, cpu_plots)
+s.set_task_plots(f, [task_pid])
 
-    session['Markers']['markB']['isSet'] = True
-    session['Markers']['markB']['row'] = int(i_ss_max)
+s.set_marker_a(i_sw_max)
+s.set_marker_b(i_ss_max)
 
-    session['ViewTop'] = int(i_sw_max) - 5
+s.set_first_visible_row(i_sw_max - 5)
 
-    tc.save_session(session, s)
+s.add_plugin(stream=f, plugin='sched_events')
 
-ks.close()
+s.save()

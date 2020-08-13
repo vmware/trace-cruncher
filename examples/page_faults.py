@@ -13,9 +13,7 @@ import pprint as pr
 from collections import Counter
 from tabulate import tabulate
 
-from tracecruncher import datawrapper as dw
-from tracecruncher import ksharkpy as ks
-from tracecruncher import ftracepy as ft
+import tracecruncher.ftracepy as ft
 import tracecruncher.utils as tc
 
 def gdb_decode_address(obj_file, obj_address):
@@ -43,15 +41,14 @@ def gdb_decode_address(obj_file, obj_address):
 # Get the name of the tracing data file.
 fname = str(sys.argv[1])
 
-ks.open(fname)
-ks.register_plugin('reg_pid')
+f = tc.open_file(file_name=fname)
 
-data = dw.load()
-tasks = ks.get_tasks()
+data = f.load()
+tasks = f.get_tasks()
 #pr.pprint(tasks)
 
 # Get the Event Ids of the page_fault_user or page_fault_kernel events.
-pf_eid = ft.event_id('exceptions', 'page_fault_user')
+pf_eid = f.event_id('exceptions/page_fault_user')
 
 # Gey the size of the data.
 d_size = tc.size(data)
@@ -68,12 +65,12 @@ for j in range(len(tasks[prog_name])):
     task_pid = tasks[prog_name][j]
     for i in range(0, d_size):
         if data['event'][i] == pf_eid and data['pid'][i] == task_pid:
-            address = ft.read_event_field(offset=data['offset'][i],
-                                          event_id=pf_eid,
-                                          field='address')
-            ip = ft.read_event_field(offset=data['offset'][i],
-                                     event_id=pf_eid,
-                                     field='ip')
+            address = f.read_event_field(offset=data['offset'][i],
+                                         event_id=pf_eid,
+                                         field='address')
+            ip = f.read_event_field(offset=data['offset'][i],
+                                    event_id=pf_eid,
+                                    field='ip')
             count[ip] += 1
 
     pf_list = count.items()
@@ -90,11 +87,12 @@ for j in range(len(tasks[prog_name])):
     for i in range(0, i_max):
         func_info = []
         address = int(pf_list[i][0])
-        func = ft.get_function(address)
+        func = ft.get_function(stream_id=f.stream_id, address=address)
         if not func :
             # The name of the function cannot be determined. Most probably
             # this is a user-space function.
-            instruction = ft.map_instruction_address(pid=task_pid,
+            instruction = ft.map_instruction_address(stream_id=f.stream_id,
+                                                     pid=task_pid,
                                                      proc_addr=address)
             if instruction:
                 func_info = gdb_decode_address(instruction['obj_file'],
@@ -108,5 +106,3 @@ for j in range(len(tasks[prog_name])):
           tabulate(table_list,
                    headers=table_headers,
                    tablefmt='simple'))
-
-ks.close()

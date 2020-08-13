@@ -29,9 +29,10 @@ static PyObject *method_open(PyObject *self, PyObject *args,
 					     PyObject *kwargs)
 {
 	struct kshark_context *kshark_ctx = NULL;
-	char *fname = NULL;
+	char *fname;
+	int sd;
 
-	static char *kwlist[] = {"fname", NULL};
+	static char *kwlist[] = {"file_name", NULL};
 	if(!PyArg_ParseTupleAndKeywords(args,
 					kwargs,
 					"s",
@@ -45,10 +46,13 @@ static PyObject *method_open(PyObject *self, PyObject *args,
 		return NULL;
 	}
 
-	if (!kshark_open(kshark_ctx, fname))
-		return Py_False;
+	sd = kshark_open(kshark_ctx, fname);
+	if (sd < 0) {
+		PyErr_Format(KSHARK_ERROR, "Failed to open file %s", fname);
+		return NULL;
+	}
 
-	return Py_True;
+	return PyLong_FromLong(sd);
 }
 
 static PyObject* method_close(PyObject* self, PyObject* noarg)
@@ -60,7 +64,59 @@ static PyObject* method_close(PyObject* self, PyObject* noarg)
 		return NULL;
 	}
 
-	kshark_close(kshark_ctx);
+	kshark_close_all(kshark_ctx);
+
+	Py_RETURN_NONE;
+}
+
+static struct kshark_data_stream *get_stream(int stream_id)
+{
+	struct kshark_context *kshark_ctx = NULL;
+	struct kshark_data_stream *stream;
+
+	if (!kshark_instance(&kshark_ctx))
+		return NULL;
+
+	stream = kshark_get_data_stream(kshark_ctx, stream_id);
+	if (!stream) {
+		PyErr_Format(KSHARK_ERROR,
+			     "No data stream %i loaded.",
+			     stream_id);
+		return NULL;
+	}
+
+	return stream;
+}
+
+static PyObject* method_set_clock_offset(PyObject* self, PyObject* args,
+							 PyObject *kwargs)
+{
+	struct kshark_data_stream *stream;
+	int64_t offset;
+	int stream_id;
+
+	static char *kwlist[] = {"stream_id", "offset", NULL};
+	if (!PyArg_ParseTupleAndKeywords(args,
+					 kwargs,
+					 "iL",
+					 kwlist,
+					 &stream_id,
+					 &offset)) {
+		return NULL;
+	}
+
+	stream = get_stream(stream_id);
+	if (!stream)
+		return NULL;
+
+	if (stream->calib_array)
+		free(stream->calib_array);
+
+	stream->calib_array = malloc(sizeof(*stream->calib_array));
+	stream->calib_array[0] = offset;
+	stream->calib_array_size = 1;
+
+	stream->calib = kshark_offset_calib;
 
 	Py_RETURN_NONE;
 }
@@ -81,19 +137,29 @@ static int compare(const void *a, const void *b)
 	return 0;
 }
 
-static PyObject* method_get_tasks(PyObject* self, PyObject* noarg)
+static PyObject* method_get_tasks(PyObject* self, PyObject* args,
+						  PyObject *kwargs)
 {
 	struct kshark_context *kshark_ctx = NULL;
 	const char *comm;
-	int *pids;
+	int sd, *pids;
 	ssize_t i, n;
+
+	static char *kwlist[] = {"stream_id", NULL};
+	if (!PyArg_ParseTupleAndKeywords(args,
+					 kwargs,
+					 "i",
+					 kwlist,
+					 &sd)) {
+		return NULL;
+	}
 
 	if (!kshark_instance(&kshark_ctx)) {
 		KS_INIT_ERROR
 		return NULL;
 	}
 
-	n = kshark_get_task_pids(kshark_ctx, &pids);
+	n = kshark_get_task_pids(kshark_ctx, sd, &pids);
 	if (n == 0) {
 		PyErr_SetString(KSHARK_ERROR,
 				"Failed to retrieve the PID-s of the tasks");
@@ -106,7 +172,7 @@ static PyObject* method_get_tasks(PyObject* self, PyObject* noarg)
 
 	tasks = PyDict_New();
 	for (i = 0; i < n; ++i) {
-		comm = tep_data_comm_from_pid(kshark_ctx->pevent, pids[i]);
+		comm = kshark_comm_from_pid(sd, pids[i]);
 		pid_val = PyLong_FromLong(pids[i]);
 		pid_list = PyDict_GetItemString(tasks, comm);
 		if (!pid_list) {
@@ -121,26 +187,83 @@ static PyObject* method_get_tasks(PyObject* self, PyObject* noarg)
 	return tasks;
 }
 
-static PyObject *method_register_plugin(PyObject *self, PyObject *args,
-							PyObject *kwargs)
+static PyObject *method_event_id(PyObject *self, PyObject *args,
+						 PyObject *kwargs)
 {
-	struct kshark_context *kshark_ctx = NULL;
-	char *plugin, *lib_file;
-	int ret;
+	struct kshark_data_stream *stream;
+	int stream_id, event_id;
+	const char *name;
 
-	static char *kwlist[] = {"plugin", NULL};
+	static char *kwlist[] = {"stream_id", "name", NULL};
 	if (!PyArg_ParseTupleAndKeywords(args,
 					 kwargs,
-					 "s",
+					 "is",
 					 kwlist,
-					 &plugin)) {
+					 &stream_id,
+					 &name)) {
 		return NULL;
 	}
 
-	if (asprintf(&lib_file, "%s/lib/plugin-%s.so",
-			        getenv("TRACE_CRUNCHER_PATH"),
-				plugin) < 0) {
-		KS_MEM_ERROR
+	stream = get_stream(stream_id);
+	if (!stream)
+		return NULL;
+
+	event_id = stream->interface.find_event_id(stream, name);
+	return PyLong_FromLong(event_id);
+}
+
+static PyObject *method_event_name(PyObject *self, PyObject *args,
+						 PyObject *kwargs)
+{
+	struct kshark_data_stream *stream;
+	struct kshark_entry entry;
+	int stream_id, event_id;
+	PyObject *ret;
+	char *name;
+
+	static char *kwlist[] = {"stream_id", "event_id", NULL};
+	if (!PyArg_ParseTupleAndKeywords(args,
+					 kwargs,
+					 "ii",
+					 kwlist,
+					 &stream_id,
+					 &event_id)) {
+		return NULL;
+	}
+
+	stream = get_stream(stream_id);
+	if (!stream)
+		return NULL;
+
+	entry.event_id = event_id;
+	entry.visible = 0xFF;
+	name = stream->interface.get_event_name(stream, &entry);
+
+	ret = PyUnicode_FromString(name);
+	free(name);
+
+	return ret;
+}
+
+static PyObject *method_read_event_field(PyObject *self, PyObject *args,
+							 PyObject *kwargs)
+{
+	struct kshark_context *kshark_ctx = NULL;
+	struct kshark_entry entry;
+	int event_id, ret, sd;
+	const char *field;
+	int64_t offset;
+	int64_t val;
+
+	static char *kwlist[] = {"stream_id", "offset", "event_id", "field", NULL};
+	if(!PyArg_ParseTupleAndKeywords(args,
+					kwargs,
+					"iLis",
+					kwlist,
+					&sd,
+					&offset,
+					&event_id,
+					&field)) {
 		return NULL;
 	}
 
@@ -149,22 +272,19 @@ static PyObject *method_register_plugin(PyObject *self, PyObject *args,
 		return NULL;
 	}
 
-	ret = kshark_register_plugin(kshark_ctx, lib_file);
-	free(lib_file);
-	if (ret < 0) {
+	entry.event_id = event_id;
+	entry.offset = offset;
+	entry.stream_id = sd;
+
+	ret = kshark_read_event_field(&entry, field, &val);
+	if (ret != 0) {
 		PyErr_Format(KSHARK_ERROR,
-			     "libshark failed to load plugin '%s'",
-			     plugin);
+			     "Failed to read field '%s' of event '%i'",
+			     field, event_id);
 		return NULL;
 	}
 
-	if (kshark_handle_plugins(kshark_ctx, KSHARK_PLUGIN_INIT) < 0) {
-		PyErr_SetString(KSHARK_ERROR,
-				"libshark failed to handle its plugins");
-		return NULL;
-	}
-
-	Py_RETURN_NONE;
+	return PyLong_FromLong(val);
 }
 
 static PyObject *method_new_session_file(PyObject *self, PyObject *args,
@@ -172,19 +292,17 @@ static PyObject *method_new_session_file(PyObject *self, PyObject *args,
 {
 	struct kshark_context *kshark_ctx = NULL;
 	struct kshark_config_doc *session;
-	struct kshark_config_doc *filters;
+	struct kshark_config_doc *plugins;
 	struct kshark_config_doc *markers;
 	struct kshark_config_doc *model;
-	struct kshark_config_doc *file;
 	struct kshark_trace_histo histo;
-	const char *session_file, *data_file;
+	const char *session_file;
 
-	static char *kwlist[] = {"data_file", "session_file", NULL};
+	static char *kwlist[] = {"session_file", NULL};
 	if (!PyArg_ParseTupleAndKeywords(args,
 					 kwargs,
-					 "ss",
+					 "s",
 					 kwlist,
-					 &data_file,
 					 &session_file)) {
 		return NULL;
 	}
@@ -197,11 +315,11 @@ static PyObject *method_new_session_file(PyObject *self, PyObject *args,
 	session = kshark_config_new("kshark.config.session",
 				    KS_CONFIG_JSON);
 
-	file = kshark_export_trace_file(data_file, KS_CONFIG_JSON);
-	kshark_config_doc_add(session, "Data", file);
+	kshark_ctx->filter_mask = KS_TEXT_VIEW_FILTER_MASK |
+				  KS_GRAPH_VIEW_FILTER_MASK |
+				  KS_EVENT_VIEW_FILTER_MASK;
 
-	filters = kshark_export_all_filters(kshark_ctx, KS_CONFIG_JSON);
-	kshark_config_doc_add(session, "Filters", filters);
+	kshark_export_all_dstreams(kshark_ctx, &session);
 
 	ksmodel_init(&histo);
 	model = kshark_export_model(&histo, KS_CONFIG_JSON);
@@ -209,6 +327,9 @@ static PyObject *method_new_session_file(PyObject *self, PyObject *args,
 
 	markers = kshark_config_new("kshark.config.markers", KS_CONFIG_JSON);
 	kshark_config_doc_add(session, "Markers", markers);
+
+	plugins = kshark_config_new("kshark.config.plugins", KS_CONFIG_JSON);
+	kshark_config_doc_add(session, "User Plugins", plugins);
 
 	kshark_save_config_file(session_file, session);
 	kshark_free_config_doc(session);
@@ -224,18 +345,33 @@ static PyMethodDef ksharkpy_methods[] = {
 	},
 	{"close",
 	 (PyCFunction) method_close,
-	 METH_NOARGS,
+	 METH_VARARGS | METH_KEYWORDS,
 	 "Close trace data file"
+	},
+	{"set_clock_offset",
+	 (PyCFunction) method_set_clock_offset,
+	 METH_VARARGS | METH_KEYWORDS,
+	 "Set the clock offset of the data stream"
 	},
 	{"get_tasks",
 	 (PyCFunction) method_get_tasks,
-	 METH_NOARGS,
+	 METH_VARARGS | METH_KEYWORDS,
 	 "Get all tasks recorded in a trace file"
 	},
-	{"register_plugin",
-	 (PyCFunction) method_register_plugin,
+	{"event_id",
+	 (PyCFunction) method_event_id,
 	 METH_VARARGS | METH_KEYWORDS,
-	 "Load a plugin"
+	 "Get the Id of the event from its name"
+	},
+	{"event_name",
+	 (PyCFunction) method_event_name,
+	 METH_VARARGS | METH_KEYWORDS,
+	 "Get the name of the event from its Id number"
+	},
+	{"read_event_field",
+	 (PyCFunction) method_read_event_field,
+	 METH_VARARGS | METH_KEYWORDS,
+	 "Get the value of an event field having a given name"
 	},
 	{"new_session_file",
 	 (PyCFunction) method_new_session_file,

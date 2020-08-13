@@ -37,7 +37,7 @@ Installing trace-cruncher is very simple. After downloading the source code, you
 
      > sudo make install
 
-Note that this will automatically download, patch and build the appropriate versions of "trace-cmd / KernelShark" libraries from kernel.org. These third-party libraries will be installed as part of trace-cruncher itself and will not interfere with any existing system-wide installations of trace-cmd and KernelShark.
+Note that this will automatically download and build the appropriate versions of "trace-cmd / KernelShark" libraries from kernel.org. These third-party libraries will be installed as part of trace-cruncher itself and will not interfere with any existing system-wide installations of trace-cmd and KernelShark.
 
 ## Documentation
 

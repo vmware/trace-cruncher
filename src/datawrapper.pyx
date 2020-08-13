@@ -29,22 +29,23 @@ ctypedef stdint.uint64_t uint64_t
 
 cdef extern from 'numpy/ndarraytypes.h':
     int NPY_ARRAY_CARRAY
-    
+
 # Numpy must be initialized!!!
 np.import_array()
 
 cdef extern from 'trace2matrix.c':
-    ssize_t trace2matrix(uint64_t **offset_array,
-			 uint16_t **cpu_array,
-			 uint64_t **ts_array,
-			 uint16_t **pid_array,
-			 int **event_array)
+    ssize_t trace2matrix(int stream_id,
+                         int16_t **cpu_array,
+                         int32_t **pid_array,
+                         int32_t **event_array,
+                         int64_t **offset_array,
+                         uint64_t **ts_array)
 
 data_column_types = {
-    'cpu': np.NPY_UINT16,
-    'pid': np.NPY_UINT16,
-    'event': np.NPY_INT,
-    'offset': np.NPY_UINT64,
+    'cpu': np.NPY_INT16,
+    'pid': np.NPY_INT32,
+    'event': np.NPY_INT32,
+    'offset': np.NPY_INT64,
     'time': np.NPY_UINT64
     }
 
@@ -91,17 +92,17 @@ cdef class KsDataWrapper:
         free(<void*>self.data_ptr)
 
 
-def load(ofst_data=True, cpu_data=True, ts_data=True,
+def load(stream_id, ofst_data=True, cpu_data=True, ts_data=True,
          pid_data=True, evt_data=True):
     """ Python binding of the 'kshark_load_data_matrix' function that does not
         copy the data. The input parameters can be used to avoid loading the
         data from the unnecessary fields.
     """
-    cdef uint64_t *ofst_c
-    cdef uint16_t *cpu_c
+    cdef int16_t *cpu_c
+    cdef int32_t *pid_c
+    cdef int32_t *evt_c
+    cdef int64_t *ofst_c
     cdef uint64_t *ts_c
-    cdef uint16_t *pid_c
-    cdef int *evt_c
 
     cdef np.ndarray ofst
     cdef np.ndarray cpu
@@ -128,7 +129,7 @@ def load(ofst_data=True, cpu_data=True, ts_data=True,
 
     cdef ssize_t size
 
-    size = trace2matrix(&ofst_c, &cpu_c, &ts_c, &pid_c, &evt_c)
+    size = trace2matrix(stream_id, &cpu_c, &pid_c, &evt_c, &ofst_c, &ts_c)
     if size <= 0:
         raise Exception('No data has been loaded.')
 
@@ -184,7 +185,7 @@ def load(ofst_data=True, cpu_data=True, ts_data=True,
         ofst.base = <PyObject *> array_wrapper_ofst
         data_dict.update({column: ofst})
         Py_INCREF(array_wrapper_ofst)
-        
+
     if ts_data:
         column = 'time'
         array_wrapper_ts = KsDataWrapper()
